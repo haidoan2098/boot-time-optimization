@@ -1,0 +1,7 @@
+# Personal notes and planning, kept out of the repo
+notes/
+plan.md
+
+# Tooling / editor state
+.claude/
+.vscode/
