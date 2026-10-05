@@ -1,0 +1,13 @@
+[Unit]
+Description=MotoCluster LVGL (fixed UI for boot time study)
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/motocluster-lvgl
+# [PHASE]/[KPI] lines go to the journal: journalctl -u motocluster-lvgl
+StandardError=journal
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
