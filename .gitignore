@@ -1,5 +1,6 @@
 # Personal notes and planning, kept out of the repo
-notes/
+notes/*
+!notes/baseline-boot-time.md
 plan.md
 
 # Tooling / editor state
