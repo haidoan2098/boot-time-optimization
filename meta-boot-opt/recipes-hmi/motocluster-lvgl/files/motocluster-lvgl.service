@@ -1,6 +1,11 @@
 [Unit]
 Description=MotoCluster LVGL (fixed UI for boot time study)
-After=local-fs.target
+# Start as early as possible: drop the implicit After=sysinit.target
+# basic.target added by DefaultDependencies=yes, so the UI does not wait
+# for unrelated services. Only the mount holding the binary is required;
+# /dev/fb0 comes from the built-in display driver before init runs.
+DefaultDependencies=no
+RequiresMountsFor=/usr/bin
 
 [Service]
 Type=simple
