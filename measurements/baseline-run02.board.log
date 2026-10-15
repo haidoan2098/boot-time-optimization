@@ -1,0 +1,39 @@
+root@beaglebone:~# cat /sys/class/graphics/fb0/virtual_size
+at /sys/class/graphics/fb0/bits_per_pi1280,1024
+xel
+root@beaglebone:~# cat /sys/class/graphics/fb0/bits_per_pixel
+analyze
+systemd-analyze crit16
+ical-root@beaglebone:~# systemd-analyze
+hain                                                                            
+journalctl -u motocluster-lvgl -o short-monotonic --no-pager -l                 
+Startup finished in 5.336s (kernel) + 15.216s (userspace) = 20.552s             
+multi-user.target reached after 14.016s in userspace.                           
+root@beaglebone:~# systemd-analyze critical-chain                               
+The time when unit became active or started is printed after the "@" character. 
+The time the unit took to start is printed after the "+" character.             
+                                                                                
+multi-user.target @14.016s                                                      
+`-systemd-logind.service @12.286s +1.721s                                       
+  `-basic.target @10.941s                                                       
+    `-sockets.target @10.924s                                                   
+      `-dbus.socket @10.905s                                                    
+        `-sysinit.target @10.856s                                               
+          `-systemd-resolved.service @7.193s +3.613s                            
+            `-systemd-tmpfiles-setup.service @6.137s +948ms                     
+              `-local-fs.target @6.028s                                         
+                `-var-volatile.mount @5.576s +304ms                             
+                  `-local-fs-pre.target @5.526s                                 
+                    `-systemd-tmpfiles-setup-dev.service @4.897s +609ms         
+                      `-systemd-tmpfiles-setup-dev-early.service @3.287s +1.080s
+                        `-systemd-journald.socket @2.006s                       
+                          `--.mount @1.658s                                     
+                            `--.slice @1.658s                                   
+root@beaglebone:~# journalctl -u motocluster-lvgl -o short-monotonic --no-pager 
+-l                                                                              
+[   16.997265] beaglebone systemd[1]: Started MotoCluster LVGL (fixed UI for bo.
+[   17.744231] beaglebone motocluster-lvgl[188]: [PHASE] lv-init           36 ms
+[   17.808283] beaglebone motocluster-lvgl[188]: [PHASE] ui-built          97 ms
+[   18.009150] beaglebone motocluster-lvgl[188]: [PHASE] first-frame      296 ms
+[   18.048174] beaglebone motocluster-lvgl[188]: [KPI] First frame is shown at )
+root@beaglebone:~# 

@@ -1,0 +1,41 @@
+beaglebone login: root
+
+WARNING: Poky is a reference Yocto Project distribution that should be used for
+testing and development purposes only. It is recommended that you create your
+own distribution for production use.
+
+root@beaglebone:~# cat /sys/class/graphics/fb0/virtual_size
+1280,1024
+root@beaglebone:~# cat /sys/class/graphics/fb0/bits_per_pixel
+16
+root@beaglebone:~# systemd-analyze
+Startup finished in 5.328s (kernel) + 15.417s (userspace) = 20.745s 
+multi-user.target reached after 14.966s in userspace.
+root@beaglebone:~# systemd-analyze critical-chain                               
+The time when unit became active or started is printed after the "@" character. 
+The time the unit took to start is printed after the "+" character.             
+                                                                                
+multi-user.target @14.966s                                                      
+`-systemd-logind.service @12.438s +1.733s                                       
+  `-basic.target @10.992s                                                       
+    `-sockets.target @10.976s                                                   
+      `-dbus.socket @10.960s                                                    
+        `-sysinit.target @10.908s                                               
+          `-systemd-resolved.service @7.197s +3.667s                            
+            `-systemd-tmpfiles-setup.service @6.137s +950ms                     
+              `-local-fs.target @6.029s                                         
+                `-var-volatile.mount @5.556s +323ms                             
+                  `-local-fs-pre.target @5.506s                                 
+                    `-systemd-tmpfiles-setup-dev.service @4.866s +620ms         
+                      `-systemd-tmpfiles-setup-dev-early.service @3.301s +1.050s
+                        `-systemd-journald.socket @2.013s                       
+                          `--.mount @1.664s                                     
+                            `--.slice @1.665s                                   
+root@beaglebone:~# journalctl -u motocluster-lvgl -o short-monotonic --no-pager 
+-l                                                                              
+[   17.141856] beaglebone systemd[1]: Started MotoCluster LVGL (fixed UI for bo.
+[   17.724310] beaglebone motocluster-lvgl[188]: [PHASE] lv-init           33 ms
+[   17.797164] beaglebone motocluster-lvgl[188]: [PHASE] ui-built          98 ms
+[   17.988268] beaglebone motocluster-lvgl[188]: [PHASE] first-frame      293 ms
+[   18.024325] beaglebone motocluster-lvgl[188]: [KPI] First frame is shown at )
+root@beaglebone:~# 
