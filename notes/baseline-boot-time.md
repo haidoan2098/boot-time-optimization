@@ -201,8 +201,8 @@ tức là **chờ ≈ 12 s** dù app chỉ cần `/dev/fb0` (kernel tạo sẵn 
 | 2. Giải nén | 4,44 s | 4,44 s | 0 |
 | 3. Kernel | 4,99 s | 5,05 s | +0,06 (nhiễu, kernel không đổi) |
 | 4. Userspace (init → first-frame) | 12,93 s | ≈ 3,44 s | **−9,5** |
-| **T2** | **26,52 s** | **≈ 17,08 s** | **−9,4 s (−35%)** |
 | T1 (fbcon) | 13,19 s | 13,19 s | 0 |
+| **T2** | **26,52 s** | **≈ 17,08 s** | **−9,4 s (−35%)** |
 
 ```mermaid
 %%{init: {
@@ -282,6 +282,7 @@ Không cắt theo tên: `INPUT_TPS65218_PWRBUTTON` mang tên TPS65218 nhưng ph�
 | Kích thước zImage | 8 466 944 B | 8 389 120 B | −76 KiB (−0,9%) |
 | 2. Giải nén | 4,44 s | 4,39 s | −0,06 |
 | 3. Kernel | 5,05 s | 4,97 s | −0,08 |
+| T1 (fbcon) | 13,19 s | 13,11 s | −0,08 |
 | **T2** | ≈ 17,08 s | **≈ 16,96 s** | −0,12 (dưới ngưỡng nhiễu 0,25 s) |
 
 Khối Giải nén giảm gần đúng tỷ lệ với kích thước zImage: dấu hiệu đầu tiên ủng hộ giả thuyết
