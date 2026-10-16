@@ -1,3 +1,3 @@
-FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
-SRC_URI += "file://disable-non-bbb-hw.cfg"
-KERNEL_CONFIG_FRAGMENTS += "${WORKDIR}/disable-non-bbb-hw.cfg"
+FILESEXTRAPATHS:prepend := "${THISDIR}/linux-bb.org:"
+SRC_URI += "file://kernel-trim.cfg"
+KERNEL_CONFIG_FRAGMENTS += "${WORKDIR}/kernel-trim.cfg"
