@@ -12,7 +12,7 @@ DEPENDS += "lz4-native"
 # root=: PARTUUID is only known when wic writes the card, and with the eMMC
 # disabled the SD card is always mmcblk0.
 FALCON_DTB ?= "am335x-boneblack.dtb"
-FALCON_BOOTARGS ?= "root=/dev/mmcblk0p2 rootwait rw earlycon console=ttyO0,115200n8,115200"
+FALCON_BOOTARGS ?= "root=/dev/mmcblk0p2 rootwait rw earlycon console=ttyO0,115200n8,115200 loglevel=4"
 DEPENDS += "dtc-native"
 
 do_deploy:append() {
