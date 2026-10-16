@@ -623,7 +623,7 @@ gantt
 Phân bổ T2 hiện tại: Userspace 41%, Kernel 36%, SPL + Giải nén 23%.
 
 ## Tối ưu 4: giảm log kernel ra console (`loglevel=4`)
-**1 lần đo.** Log: `opt4-run01.grabserial.log` (serial), `opt4-run01.board.log` (`dmesg`, `journalctl` trên board).
+**2 lần đo.** Log: `opt4-run01..02.grabserial.log` (serial), `opt4-run01..02.board.log` (`dmesg`, `journalctl` trên board).
 Làm sau cùng có chủ ý: bước này lấy đi phần lớn log dùng để quan sát.
 
 **Quan sát.** Kernel in khoảng 290 dòng ra UART 115200 trước `Run /sbin/init`. Console 8250 in theo kiểu legacy,
@@ -647,6 +647,14 @@ Không dùng thời điểm host của các dòng systemd, vì chúng trễ theo
 | 4. Userspace (init → first-frame) | ≈ 3,40 s | ≈ 3,20 s | −0,20 |
 | T1 (fbcon) | 4,40 s | 3,14 s | −1,26 |
 | **T2** | ≈ 8,20 s | **≈ 6,50 s** | **−1,70 (−75% so với baseline)** |
+
+Hai lần đo (cùng image):
+
+| Mốc | run01 | run02 |
+|---|---|---|
+| Kernel | 1,43 s | 1,43 s |
+| T1 | 3,14 s | 3,15 s |
+| T2 | 6,51 s | 6,48 s |
 
 Khối Kernel giảm gần bằng toàn bộ thời gian truyền log qua UART: printk thực sự chặn CPU. Userspace giảm ít vì chỉ
 mất các dòng kmsg trùng; log trạng thái của systemd vẫn ra console.

@@ -1,0 +1,7 @@
+root@beaglebone:~# dmesg | grep -E "Run /sbin/init|colour frame buffer|colour dummy device 80x30"
+[    0.002005] Console: colour dummy device 80x30
+[    1.269158] Console: switching to colour frame buffer device 160x64
+[    1.431255] Run /sbin/init as init process
+[    4.750312] Console: switching to colour dummy device 80x30
+root@beaglebone:~# cat /proc/cmdline
+root=/dev/mmcblk0p2 rootwait rw earlycon console=ttyO0,115200n8,115200 loglevel=4
