@@ -1,0 +1,41 @@
+From: haidoan2098
+Subject: [PATCH] ARM: dts: am335x-boneblack: disable cape EEPROMs and eMMC
+
+No cape is used on this board; do not probe the four cape ID EEPROMs
+on i2c2. The i2c2 bus itself stays enabled.
+
+The on-board eMMC is not used yet: boot and rootfs are on the SD card.
+
+Upstream-Status: Inappropriate [boot time study, board specific]
+---
+--- a/arch/arm/boot/dts/ti/omap/am335x-boneblack.dts
++++ b/arch/arm/boot/dts/ti/omap/am335x-boneblack.dts
+@@ -178,3 +178,28 @@
+ &baseboard_eeprom {
+ 	vcc-supply = <&ldo4_reg>;
+ };
++
++/*
++ * No BeagleBone cape is used: do not probe the cape ID EEPROMs on i2c2.
++ * The i2c2 bus itself stays enabled for future devices.
++ */
++&cape_eeprom0 {
++	status = "disabled";
++};
++
++&cape_eeprom1 {
++	status = "disabled";
++};
++
++&cape_eeprom2 {
++	status = "disabled";
++};
++
++&cape_eeprom3 {
++	status = "disabled";
++};
++
++/* The on-board eMMC is not used yet (boot and rootfs are on the SD card). */
++&mmc2 {
++	status = "disabled";
++};
