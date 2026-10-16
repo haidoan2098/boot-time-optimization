@@ -404,3 +404,120 @@ gantt
 ```
 
 Phân bổ T2 hiện tại: Giải nén 31%, Userspace 29%, Kernel 23%, Bootloader 17%. Mỗi bước mới 1 lần đo sạch.
+
+## Tối ưu 3: kỹ thuật
+Thay cơ chế bằng cái khác (khác Tối ưu 1–2 chỉ chỉnh, tắt, bỏ bớt).
+
+### Tối ưu 3a: nén kernel bằng LZ4 thay XZ
+**1 lần đo.** Log: `opt3a-run01.grabserial.log`.
+
+**Quan sát.** Khối Giải nén (`Starting kernel` → `Booting Linux`) là khối lớn nhất của T2 sau Tối ưu 2 (3,70 s).
+Kernel đang nén bằng XZ (`CONFIG_KERNEL_XZ=y` trong `arch/arm/configs/bb.org_defconfig`; mặc định của
+`init/Kconfig` là GZIP). Bộ giải nén chạy trong `arch/arm/boot/compressed/` (`head.S` → `decompress_kernel()` →
+`lib/decompress_unxz.c`), cache đã bật trước khi giải nén.
+
+**Vì sao bb.org chọn XZ** [suy luận, không có ghi chép]: config dùng chung cho mọi board Beagle, ưu tiên file nhỏ
+(phân vùng boot, tải về, cập nhật), không ưu tiên thời gian boot.
+
+**Mô hình để chọn.** Chỉ tính những gì xảy ra lúc boot:
+
+    thời gian = kích thước file nén ÷ tốc độ đọc SD (U-Boot) + thời gian giải nén trên board
+
+**So sánh các thuật toán** (ARM32 hỗ trợ 5 loại; benchmark trên host i7-1260P, 1 luồng, cùng `Image` 24,18 MiB
+của kernel Tối ưu 2c, cùng tham số nén như `scripts/Makefile.lib`; giá trị tuyệt đối khác board, chỉ dùng để so sánh):
+
+| Thuật toán | Năm | Mục tiêu thiết kế | Kích thước (MiB) | So với GZIP | Giải nén (MB/s) |
+|---|---|---|---|---|---|
+| GZIP | 1992 | Cân bằng | 9,91 | 0% | 190 |
+| LZO | 1996 | Tốc độ | 11,06 | +11,7% | 439 |
+| LZMA | 1998 | Tỷ lệ nén | 7,20 | −27,4% | 72 |
+| XZ | 2009 | Tỷ lệ nén | 6,61 | −33,3% | 75 |
+| LZ4 | 2011 | Tốc độ giải nén | 11,88 | +19,9% | 2 130 |
+
+**Yếu tố đưa vào và bỏ qua.**
+
+| Yếu tố | Xét? | Lý do |
+|---|---|---|
+| Tốc độ giải nén | Có | Xảy ra mỗi lần boot, trên CPU yếu |
+| Kích thước file | Có, gián tiếp | Chỉ qua thời gian đọc SD |
+| Thời gian nén | Không | Chỉ xảy ra lúc build trên host |
+| Dung lượng lưu trữ | Không | Thẻ SD và phân vùng boot còn dư nhiều |
+| Kích thước gói cập nhật, RAM lúc giải nén | Không | Chưa có OTA; RAM đủ |
+| ZSTD | Không | ARM32 không có `HAVE_KERNEL_ZSTD` |
+
+**Quyết định: LZ4.** Trên board này CPU là nút thắt, không phải SD: LZ4 to hơn XZ khoảng 5 MB (đọc chậm hơn
+một chút) nhưng giải nén nhanh hơn nhiều. LZ4 chỉ thua GZIP khi tốc độ đọc rất thấp, xa dưới SD hiện tại và
+SPL ở chế độ Falcon, nên lựa chọn vẫn đứng nếu sau này đổi cách nạp kernel.
+
+**Thay đổi.**
+- `kernel-trim.cfg`: `# CONFIG_KERNEL_XZ is not set`, `CONFIG_KERNEL_LZ4=y`.
+- `linux-bb.org_%.bbappend`: `DEPENDS += "lz4-native"`. Makefile kernel gọi `lz4`, không có trong HOSTTOOLS
+  (chỉ có `lz4c`); `kernel.bbclass` chỉ tự thêm `lz4-native` khi *initramfs* nén LZ4 (`INITRAMFS_FSTYPES`), vì
+  lựa chọn trong Kconfig chỉ biết được ở `do_configure`, sau khi bitbake đã tính `DEPENDS` lúc parse.
+
+**Kết quả** (so với Tối ưu 2c):
+
+| Chỉ số | Tối ưu 2c | Tối ưu 3a | Chênh |
+|---|---|---|---|
+| Kích thước zImage | 6 996 480 B | 12 517 888 B | +5,5 MB |
+| 1. Bootloader (đọc zImage lâu hơn) | 2,04 s | 2,39 s | +0,35 |
+| 2. Giải nén | 3,70 s | 0,53 s | −3,18 |
+| 3. Kernel | 2,80 s | 2,79 s | 0 |
+| 4. Userspace (init → first-frame) | ≈ 3,52 s | ≈ 3,48 s | 0 |
+| T1 (fbcon) | 8,27 s | 5,43 s | −2,83 |
+| **T2** | ≈ 12,07 s | **≈ 9,20 s** | **−2,87 (−65% so với baseline)** |
+
+**Host khác board.** Bảng host chọn đúng thứ hạng nhưng không đúng độ lớn: LZ4 nhanh hơn XZ khoảng 28 lần trên
+host, chỉ khoảng 7 lần trên board. [suy luận] XZ bị giới hạn bởi tính toán (tỷ lệ theo CPU); LZ4 chủ yếu sao chép
+bộ nhớ, trên Cortex-A8 bị giới hạn bởi băng thông RAM và cache, nơi host vượt xa board.
+
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace',
+    'fontSize': '12px',
+    'titleColor': '#0969da',
+    'gridColor': '#d0d7de',
+    'lineColor': '#0969da',
+    'sectionBkgColor': '#f6f8fa',
+    'altSectionBkgColor': '#ffffff',
+    'sectionBkgColor2': '#f6f8fa',
+    'doneTaskBkgColor': '#2da44e',
+    'doneTaskBorderColor': '#1a7f37',
+    'doneTaskTextColor': '#ffffff',
+    'critBkgColor': '#cf222e',
+    'critBorderColor': '#a40e26',
+    'critTextColor': '#ffffff',
+    'activeTaskBkgColor': '#0969da',
+    'activeTaskBorderColor': '#0550ae',
+    'activeTaskTextColor': '#ffffff',
+    'milestoneBkgColor': '#d4a72c',
+    'milestoneBorderColor': '#9a6700'
+  }
+}}%%
+gantt
+    title Boot Chain Optimization 3a (0.00s ➔ 9.20s)
+    dateFormat x
+    axisFormat %S s
+    tickInterval 1second
+
+    section 1. Bootloader (2.39s)
+    SPL nạp U-Boot [0.00s → 0.77s] (0.77s)            :done, d1, 0, 773
+    U-Boot init [0.77s → 1.44s] (0.67s)               :done, d2, 773, 1441
+    Autoboot delay [1.44s → 1.51s] (0.07s)            :done, d3, 1441, 1510
+    Read extlinux, DTB, kernel [1.51s → 2.39s] (0.88s):crit, d4, 1510, 2393
+
+    section 2. Decompress (0.53s)
+    zImage decompress LZ4 [2.39s → 2.92s] (0.53s)     :done, d5, 2393, 2922
+
+    section 3. Kernel (2.79s)
+    Kernel to /sbin/init [2.92s → 5.72s] (2.79s)      :active, d6, 2922, 5716
+    T1 fbcon ready @ 5.43s                            :milestone, 5431, 5431
+
+    section 4. Userspace (3.48s)
+    Init to first-frame [5.72s → 9.20s] (3.48s)       :active, d7, 5716, 9197
+    T2 first-frame @ 9.20s                            :milestone, 9197, 9197
+```
+
+Phân bổ T2 hiện tại: Userspace 38%, Kernel 30%, Bootloader 26%, Giải nén 6%.
