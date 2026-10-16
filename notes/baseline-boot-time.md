@@ -521,3 +521,103 @@ gantt
 ```
 
 Phân bổ T2 hiện tại: Userspace 38%, Kernel 30%, Bootloader 26%, Giải nén 6%.
+
+### Tối ưu 3b: Falcon mode (SPL nạp thẳng kernel, bỏ U-Boot proper)
+**1 lần đo.** Log: `opt3b-run01.grabserial.log`; lần thử khi chưa có `args`: `diag-falcon-fallback01.grabserial.log`.
+
+**Cơ chế.** Bình thường: ROM → SPL (SRAM nội, khởi tạo DDR) → U-Boot proper (driver đầy đủ, env, `extlinux.conf`,
+sửa DTB lúc chạy) → kernel. Falcon: SPL tự nạp kernel và một DTB đã sửa sẵn ("args") rồi nhảy vào kernel; U-Boot
+proper không chạy. SPL quá nhỏ để đọc `extlinux.conf` hay sửa DTB, nên vị trí file và cmdline phải cố định từ trước.
+Tài liệu: `doc/develop/falcon.rst` trong source U-Boot (đọc đúng bản đang build; bản "latest" trên web có thêm
+Secure Falcon dùng FIT, bản 2025.10 chưa có).
+
+**Vì sao trước đây Falcon không chạy.** `am335x_evm_defconfig` đã bật sẵn `SPL_OS_BOOT`, nhưng
+`spl_start_uboot()` (`board/ti/am335x/board.c`) chỉ vào Falcon khi env có `boot_os=yes`, mà SPL không có nơi lưu
+env (`SPL_ENV_IS_NOWHERE`). Falcon có sẵn nhưng bị khoá.
+
+**Thay đổi.**
+
+| Nơi | Thay đổi | Lý do |
+|---|---|---|
+| `u-boot-bb.org/falcon.cfg` | `SPL_FS_LOAD_KERNEL_NAME="zImage"` | SPL nhận zImage trần qua `bootz_setup()` (cần `CMD_BOOTZ`), không cần uImage |
+| | `SPL_ENV_SUPPORT`, `SPL_NET` = n (kéo theo `SPL_ETH`, `SPL_USB_ETHER`) | Bỏ điều kiện `boot_os`; các đường boot mạng/USB của SPL gọi API env |
+| `linux-bb.org_%.bbappend` | `do_deploy` tạo `args` = DTB + `/chosen/bootargs` (`fdtput`, `dtc-native`) | Image tự đủ, không có bước tay trên board |
+| `boot-opt-image.bb` | `IMAGE_BOOT_FILES` thêm `args` | SPL đọc `args` từ phân vùng boot (FAT) |
+
+Cmdline trong `args` giống `extlinux.conf`, trừ `root=/dev/mmcblk0p2` thay `PARTUUID` (PARTUUID chỉ có khi wic tạo
+thẻ, sau khi kernel đã build; eMMC đã tắt ở Tối ưu 2c nên thẻ SD luôn là `mmcblk0`). Giữ nguyên đọc qua FAT, cách
+SPL đọc thẻ (PIO) và bố cục thẻ: chỉ thay đổi bắt buộc để Falcon chạy.
+
+**Hướng đã thử và bỏ.** Tạo `args` bằng `spl export fdt` ở prompt U-Boot (cách trong tài liệu): lệnh này đi qua
+`bootm`, không nhận zImage (`Wrong Image Type for bootm command`) rồi crash (`data abort`). Ngoài ra đây là bước làm
+tay, không hợp với yêu cầu image build ra phải chạy ngay.
+
+**Kết quả** (so với Tối ưu 3a). Không còn dòng `Starting kernel` nên khối 1 và 2 chỉ đo được gộp lại.
+
+| Chỉ số | Tối ưu 3a | Tối ưu 3b | Chênh |
+|---|---|---|---|
+| 1 + 2. SPL → `Booting Linux` | 2,92 s | 1,88 s | −1,04 |
+| 3. Kernel | 2,79 s | 2,92 s | +0,13 (Falcon không đụng kernel; nhiều khả năng nhiễu) |
+| T1 (fbcon) | 5,43 s | 4,40 s | −1,04 |
+| **T2** | ≈ 9,20 s | **≈ 8,20 s** | **−1,00 (−69% so với baseline)** |
+
+Lần thử khi chưa có `args`: SPL báo `spl_load_image_fat_os: error reading image args, err - -2` rồi tự quay về
+U-Boot proper và boot bình thường; chi phí của lần thử thất bại rất nhỏ.
+
+**Đánh đổi và còn thiếu cho sản phẩm.**
+- Cmdline của `args` đang viết cứng, tách khỏi `extlinux.conf`: đổi một nơi mà quên nơi kia thì không có tác dụng và
+  không báo lỗi. Cần lấy từ biến chung và kiểm tra `args` lúc build.
+- `root=` theo đường dẫn thiết bị: đúng khi chỉ có thẻ SD; phải xem lại nếu bật eMMC hoặc boot từ eMMC.
+- Chưa kiểm chứng giả định "U-Boot chỉ thêm `bootargs` vào DTB" (so `/sys/firmware/fdt` với DTB gốc).
+- Lối vào U-Boot chỉ còn phím `c` trên serial trong lúc SPL chạy; sản phẩm cần nút hoặc GPIO.
+- Không kiểm tra chữ ký kernel/`args` (Secure Falcon cần U-Boot mới hơn).
+- Bỏ U-Boot proper là bỏ luôn chỗ thường đặt logic cập nhật A/B và rollback; phải quyết định ở mức sản phẩm.
+
+**Quan sát ngoài phạm vi đo.** Thỉnh thoảng ROM không đọc được MLO từ thẻ SD ở lần thử đầu, chuyển sang boot qua
+UART (in `CCCC...`) rồi mới quay lại thẻ, mất thêm vài giây trước dòng SPL. Không ảnh hưởng T1/T2 (mốc 0 là SPL)
+nhưng ảnh hưởng thời gian thật từ lúc cấp nguồn.
+
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace',
+    'fontSize': '12px',
+    'titleColor': '#0969da',
+    'gridColor': '#d0d7de',
+    'lineColor': '#0969da',
+    'sectionBkgColor': '#f6f8fa',
+    'altSectionBkgColor': '#ffffff',
+    'sectionBkgColor2': '#f6f8fa',
+    'doneTaskBkgColor': '#2da44e',
+    'doneTaskBorderColor': '#1a7f37',
+    'doneTaskTextColor': '#ffffff',
+    'critBkgColor': '#cf222e',
+    'critBorderColor': '#a40e26',
+    'critTextColor': '#ffffff',
+    'activeTaskBkgColor': '#0969da',
+    'activeTaskBorderColor': '#0550ae',
+    'activeTaskTextColor': '#ffffff',
+    'milestoneBkgColor': '#d4a72c',
+    'milestoneBorderColor': '#9a6700'
+  }
+}}%%
+gantt
+    title Boot Chain Optimization 3b (0.00s ➔ 8.20s)
+    dateFormat x
+    axisFormat %S s
+    tickInterval 1second
+
+    section 1+2. SPL + Decompress (1.88s)
+    SPL loads args, zImage; LZ4 decompress [0.00s → 1.88s] (1.88s) :done, e1, 0, 1879
+
+    section 3. Kernel (2.92s)
+    Kernel to /sbin/init [1.88s → 4.80s] (2.92s)      :active, e2, 1879, 4803
+    T1 fbcon ready @ 4.40s                            :milestone, 4396, 4396
+
+    section 4. Userspace (3.40s)
+    Init to first-frame [4.80s → 8.20s] (3.40s)       :crit, e3, 4803, 8202
+    T2 first-frame @ 8.20s                            :milestone, 8202, 8202
+```
+
+Phân bổ T2 hiện tại: Userspace 41%, Kernel 36%, SPL + Giải nén 23%.
