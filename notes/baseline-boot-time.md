@@ -253,8 +253,8 @@ gantt
     T2 first-frame @ 17.08s                           :milestone, 17080, 17080
 ```
 
-## Tối ưu 2: cắt kernel config và tắt bootdelay
-Cấu hình kernel và U-Boot. Hai bước nhỏ, mỗi bước đổi đúng một thứ, đo riêng.
+## Tối ưu 2: cắt kernel config, tắt bootdelay, tắt node DT không dùng
+Cấu hình kernel, U-Boot và device tree. Ba bước nhỏ, mỗi bước đổi đúng một thứ, đo riêng.
 
 ### Tối ưu 2a: tắt driver phần cứng không có trên BBB
 **1 lần đo.** Log: `opt2a-run01.grabserial.log`; dữ liệu initcall: `diag-initcall01.initcall.log`.
@@ -310,15 +310,49 @@ giữ được đường vào prompt khi cần debug.
 | T1 (fbcon) | 13,11 s | 11,09 s | −2,02 |
 | **T2** | ≈ 16,96 s | **≈ 14,95 s** | **−2,01** |
 
-### Tổng kết Tối ưu 2
-| Giai đoạn | Baseline | Tối ưu 1 | Tối ưu 2 (2a + 2b) |
+### Tối ưu 2c: thu nhỏ kernel và tắt node DT không dùng
+**1 lần đo.** Log: `opt2c-run01.grabserial.log`. Bước này gộp ba thay đổi trong một lần build.
+
+**Nguyên tắc chọn.** Không chỉ có bật/tắt: tính năng sản phẩm có thể cần sau này (network, USB) giữ nguyên;
+thứ không cần lúc boot nhưng có thể dùng sau chuyển thành module (`=m`), ra khỏi đường boot; thứ phần cứng
+không bao giờ có thì tắt (`n`). LSM và tracing là `bool` (không làm module được) nên giữ nguyên.
+
+**Thay đổi.**
+
+| Nơi | Thay đổi | Lý do |
+|---|---|---|
+| `kernel-trim.cfg` | `MTD` = n (kéo theo JFFS2, UBIFS) | BBB không có NAND/NOR (`NAND: 0 MiB`) |
+| | `MD` = n | Không có kịch bản RAID |
+| | `BTRFS_FS`, `F2FS_FS`, `NFS_FS` = m | Có thể dùng sau (USB/SD, mount từ host), không cần lúc boot |
+| Patch `am335x-boneblack.dts` | `cape_eeprom0..3` disabled (giữ bus i2c2) | Không cắm cape; probe trả `-ENODEV` |
+| | `mmc2` (eMMC) disabled | Boot và rootfs đều trên SD |
+
+**Kết quả** (so với Tối ưu 2b):
+
+| Chỉ số | Tối ưu 2b | Tối ưu 2c | Chênh |
 |---|---|---|---|
-| 1. Bootloader | 4,16 s | 4,15 s | 2,13 s |
-| 2. Giải nén | 4,44 s | 4,44 s | 4,39 s |
-| 3. Kernel | 4,99 s | 5,05 s | 4,92 s |
+| Kích thước zImage | 8 389 120 B | 6 996 480 B | −1,33 MiB (−16,6%) |
+| 1. Bootloader | 2,13 s | 2,04 s | −0,09 (đọc zImage nhỏ hơn) |
+| 2. Giải nén | 4,39 s | 3,70 s | −0,68 |
+| 3. Kernel | 4,92 s | 2,80 s | −2,12 |
+| T1 (fbcon) | 11,09 s | 8,27 s | −2,83 |
+| **T2** | ≈ 14,95 s | **≈ 12,07 s** | **−2,89** |
+
+- Giải nén giảm 15,5%, gần đúng tỷ lệ zImage nhỏ đi (16,6%), cùng xu hướng với Tối ưu 2a: khối này là giải nén
+  kernel (XZ).
+- Kernel giảm vượt dự đoán vì **khoảng trống ≈ 1,64 s trước `Initialise system trusted keyrings` biến mất**,
+  dù `BLK_DEV_IO_TRACE` vẫn bật. Vậy `init_blk_tracer` chỉ là initcall rơi đúng lúc phải chờ, không phải nguyên
+  nhân. Thay đổi nào trong ba nhóm gỡ được nó: chưa tách (cần bật lại từng nhóm để tìm).
+
+### Tổng kết Tối ưu 2
+| Giai đoạn | Baseline | Tối ưu 1 | Tối ưu 2 (2a + 2b + 2c) |
+|---|---|---|---|
+| 1. Bootloader | 4,16 s | 4,15 s | 2,04 s |
+| 2. Giải nén | 4,44 s | 4,44 s | 3,70 s |
+| 3. Kernel | 4,99 s | 5,05 s | 2,80 s |
 | 4. Userspace (init → first-frame) | 12,93 s | ≈ 3,44 s | ≈ 3,52 s |
-| T1 (fbcon) | 13,19 s | 13,19 s | 11,09 s |
-| **T2** | **26,52 s** | **≈ 17,08 s** | **≈ 14,95 s (−11,6 s, −44% so với baseline)** |
+| T1 (fbcon) | 13,19 s | 13,19 s | 8,27 s |
+| **T2** | **26,52 s** | **≈ 17,08 s** | **≈ 12,07 s (−14,45 s, −54% so với baseline)** |
 
 ```mermaid
 %%{init: {
@@ -346,28 +380,27 @@ giữ được đường vào prompt khi cần debug.
   }
 }}%%
 gantt
-    title Boot Chain Optimization 2 (0.00s ➔ 14.95s)
+    title Boot Chain Optimization 2 (0.00s ➔ 12.07s)
     dateFormat x
     axisFormat %S s
     tickInterval 2second
 
-    section 1. Bootloader (2.13s)
+    section 1. Bootloader (2.04s)
     SPL nạp U-Boot [0.00s → 0.77s] (0.77s)            :done, c1, 0, 773
-    U-Boot init [0.77s → 1.44s] (0.67s)               :done, c2, 773, 1440
-    Autoboot delay [1.44s → 1.51s] (0.07s)            :done, c3, 1440, 1510
-    Read extlinux, DTB, kernel [1.51s → 2.13s] (0.62s):done, c4, 1510, 2131
+    U-Boot init [0.77s → 1.44s] (0.67s)               :done, c2, 773, 1441
+    Autoboot delay [1.44s → 1.51s] (0.07s)            :done, c3, 1441, 1510
+    Read extlinux, DTB, kernel [1.51s → 2.04s] (0.53s):done, c4, 1510, 2044
 
-    section 2. Decompress (4.39s)
-    zImage decompress [2.13s → 6.52s] (4.39s)         :crit, c5, 2131, 6517
+    section 2. Decompress (3.70s)
+    zImage decompress [2.04s → 5.75s] (3.70s)         :crit, c5, 2044, 5748
 
-    section 3. Kernel (4.92s)
-    Kernel to /sbin/init [6.52s → 11.44s] (4.92s)     :active, c6, 6517, 11437
-    T1 fbcon ready @ 11.09s                           :milestone, 11094, 11094
+    section 3. Kernel (2.80s)
+    Kernel to /sbin/init [5.75s → 8.55s] (2.80s)      :active, c6, 5748, 8550
+    T1 fbcon ready @ 8.27s                            :milestone, 8265, 8265
 
     section 4. Userspace (3.52s)
-    Init to first-frame [11.44s → 14.95s] (3.52s)     :active, c7, 11437, 14955
-    T2 first-frame @ 14.95s                           :milestone, 14955, 14955
+    Init to first-frame [8.55s → 12.07s] (3.52s)      :active, c7, 8550, 12068
+    T2 first-frame @ 12.07s                           :milestone, 12068, 12068
 ```
 
-Phân bổ T2 hiện tại: Giải nén 29%, Kernel 33% (trong đó khoảng trống ≈ 1,64 s chưa rõ), Userspace 24%,
-Bootloader 14%. Mỗi bước mới 1 lần đo sạch.
+Phân bổ T2 hiện tại: Giải nén 31%, Userspace 29%, Kernel 23%, Bootloader 17%. Mỗi bước mới 1 lần đo sạch.
