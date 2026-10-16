@@ -1,0 +1,8 @@
+root@beaglebone:~# dmesg | grep -E "Run /sbin/init|colour frame buffer|colour dummy device 80x30"
+[    0.002016] Console: colour dummy device 80x30
+[    1.260930] Console: switching to colour frame buffer device 160x64
+[    1.426172] Run /sbin/init as init process
+[    4.775592] Console: switching to colour dummy device 80x30
+root@beaglebone:~# journalctl -b -o short-monotonic --no-pager | grep -E "Started MotoCluster"
+[    4.431643] beaglebone systemd[1]: Started MotoCluster LVGL (fixed UI for bo.
+[   15.907004] beaglebone kernel[187]: [    4.431643] systemd[1]: Started MotoC.

@@ -621,3 +621,80 @@ gantt
 ```
 
 Phân bổ T2 hiện tại: Userspace 41%, Kernel 36%, SPL + Giải nén 23%.
+
+## Tối ưu 4: giảm log kernel ra console (`loglevel=4`)
+**1 lần đo.** Log: `opt4-run01.grabserial.log` (serial), `opt4-run01.board.log` (`dmesg`, `journalctl` trên board).
+Làm sau cùng có chủ ý: bước này lấy đi phần lớn log dùng để quan sát.
+
+**Quan sát.** Kernel in khoảng 290 dòng ra UART 115200 trước `Run /sbin/init`. Console 8250 in theo kiểu legacy,
+printk phải chờ UART đẩy xong ký tự, nên thời gian truyền log nằm thẳng trên đường găng.
+
+**Thay đổi.** Thêm `loglevel=4` vào cmdline: console chỉ in message mức nhỏ hơn 4 (`EMERG` đến `ERR`).
+Message mức thấp hơn vẫn nằm trong ring buffer (`dmesg`). Ở chế độ Falcon cmdline lấy từ `args`, nên tham số
+được thêm vào `FALCON_BOOTARGS`; `extlinux.conf` (đường quay về U-Boot) chưa có tham số này.
+Log của systemd (`[  OK  ] ...`) không chịu ảnh hưởng của `loglevel`.
+
+**Cách đo thay đổi.** Dòng `Booting Linux` vẫn ra serial (in trước khi kernel đọc cmdline) nên mốc K giữ nguyên;
+các mốc còn lại (fbcon, `Run /sbin/init`, gỡ fbcon) lấy từ `dmesg` trên board rồi cộng K, giống công thức cũ.
+Không dùng thời điểm host của các dòng systemd, vì chúng trễ theo lượng log còn tồn trong UART.
+
+**Kết quả** (so với Tối ưu 3b):
+
+| Chỉ số | Tối ưu 3b | Tối ưu 4 | Chênh |
+|---|---|---|---|
+| 1 + 2. SPL → `Booting Linux` | 1,88 s | 1,88 s | 0 |
+| 3. Kernel | 2,92 s | 1,43 s | −1,50 |
+| 4. Userspace (init → first-frame) | ≈ 3,40 s | ≈ 3,20 s | −0,20 |
+| T1 (fbcon) | 4,40 s | 3,14 s | −1,26 |
+| **T2** | ≈ 8,20 s | **≈ 6,50 s** | **−1,70 (−75% so với baseline)** |
+
+Khối Kernel giảm gần bằng toàn bộ thời gian truyền log qua UART: printk thực sự chặn CPU. Userspace giảm ít vì chỉ
+mất các dòng kmsg trùng; log trạng thái của systemd vẫn ra console.
+
+**Còn lại.** Đường quay về U-Boot chưa có `loglevel=4` (cmdline đang ở hai nơi, cần gộp về một nguồn).
+`systemd.show_status` / `quiet` có thể giảm thêm phần log userspace, đổi lại mất cả log trạng thái của systemd.
+
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'fontFamily': '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace',
+    'fontSize': '12px',
+    'titleColor': '#0969da',
+    'gridColor': '#d0d7de',
+    'lineColor': '#0969da',
+    'sectionBkgColor': '#f6f8fa',
+    'altSectionBkgColor': '#ffffff',
+    'sectionBkgColor2': '#f6f8fa',
+    'doneTaskBkgColor': '#2da44e',
+    'doneTaskBorderColor': '#1a7f37',
+    'doneTaskTextColor': '#ffffff',
+    'critBkgColor': '#cf222e',
+    'critBorderColor': '#a40e26',
+    'critTextColor': '#ffffff',
+    'activeTaskBkgColor': '#0969da',
+    'activeTaskBorderColor': '#0550ae',
+    'activeTaskTextColor': '#ffffff',
+    'milestoneBkgColor': '#d4a72c',
+    'milestoneBorderColor': '#9a6700'
+  }
+}}%%
+gantt
+    title Boot Chain Optimization 4 (0.00s ➔ 6.50s)
+    dateFormat x
+    axisFormat %S s
+    tickInterval 1second
+
+    section 1+2. SPL + Decompress (1.88s)
+    SPL loads args, zImage; LZ4 decompress [0.00s → 1.88s] (1.88s) :done, f1, 0, 1879
+
+    section 3. Kernel (1.43s)
+    Kernel to /sbin/init [1.88s → 3.31s] (1.43s)      :active, f2, 1879, 3306
+    T1 fbcon ready @ 3.14s                            :milestone, 3140, 3140
+
+    section 4. Userspace (3.20s)
+    Init to first-frame [3.31s → 6.51s] (3.20s)       :crit, f3, 3306, 6505
+    T2 first-frame @ 6.50s                            :milestone, 6505, 6505
+```
+
+Phân bổ T2 hiện tại: Userspace 49%, SPL + Giải nén 29%, Kernel 22%.
