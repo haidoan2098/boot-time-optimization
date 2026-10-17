@@ -749,22 +749,3 @@ Phân bổ T2 hiện tại: Userspace 49%, SPL + Giải nén 29%, Kernel 22%.
 | Tối ưu 4 | `loglevel=4` | 3 | 3,14 s | **≈ 6,5 s** |
 
 T2 giảm ≈ 20 s (−75%). Phân bổ hiện tại: Userspace 49%, SPL + Giải nén 29%, Kernel 22%.
-
-### Cố ý chưa làm
-| Hạng mục | Lý do |
-|---|---|
-| Userspace: khoảng 1,6 s systemd chạy generator và nạp unit trước unit đầu tiên | Dừng có chủ ý; phần lớn thuộc về systemd, chỉ giảm mạnh nếu thay init |
-| Ethernet, USB chuyển sang module | Sản phẩm cần; cần cài module vào image, để sau |
-| Tìm thay đổi nào ở Tối ưu 2c gỡ được khoảng trống 1,6 s | Chỉ mang tính tìm hiểu, không giảm thêm thời gian |
-| `systemd.show_status=false` / `quiet` | Mất log trạng thái systemd đang dùng để quan sát |
-| Falcon đọc sector raw, SPL dùng DMA | Phải đổi bố cục thẻ và vá SPL |
-| GPU (SGX530) | Driver trong meta-ti nhắm kernel 6.1; UI hiện vẽ bằng CPU đủ nhanh cho frame đầu |
-
-### Hướng tiếp theo
-- Kiểm chứng giả định "U-Boot chỉ thêm `bootargs` vào DTB": so `/sys/firmware/fdt` với DTB gốc.
-- Đo lặp các bước mới có 1 lần đo, tối thiểu là cấu hình cuối.
-- Có thể giảm thêm, mỗi cái một bước: rootfs read-only (bỏ ext4 recovery, vừa tốn thời gian vừa gây nhiễu
-  số đo), `lpj=` (bỏ hiệu chỉnh delay loop), `systemd.show_status=false`.
-- Sản phẩm: chiến lược cập nhật A/B và rollback khi bỏ U-Boot proper, kiểm tra chữ ký kernel, root theo
-  thiết bị lưu trữ cuối cùng (eMMC hay SD).
-- Hiệu năng UI (FPS, CPU khi chạy) và so sánh với bản Qt trên nhánh riêng.
