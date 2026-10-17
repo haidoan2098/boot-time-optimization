@@ -1,7 +1,32 @@
-# Thời gian boot BeagleBone Black: đến UI infotainment
+# Thời gian boot BeagleBone Black: đến UI cụm đồng hồ (instrument cluster)
+
+**Kết quả:** UI lên màn hình sau ≈ 6,5 s tính từ SPL, so với 26,5 s ở cấu hình mặc định (−75%).
+
+## Mục lục
+- [Phương pháp đo](#phương-pháp-đo)
+- [Baseline: cấu hình mặc định](#baseline-cấu-hình-mặc-định)
+- [Tối ưu 1: app chạy ngay khi systemd sẵn sàng](#tối-ưu-1-app-chạy-ngay-khi-systemd-sẵn-sàng)
+- [Tối ưu 2: cắt kernel config, tắt bootdelay, tắt node DT không dùng](#tối-ưu-2-cắt-kernel-config-tắt-bootdelay-tắt-node-dt-không-dùng)
+- [Tối ưu 3: kỹ thuật](#tối-ưu-3-kỹ-thuật)
+- [Tối ưu 4: giảm log kernel ra console](#tối-ưu-4-giảm-log-kernel-ra-console-loglevel4)
+- [Tổng kết](#tổng-kết)
+
+## Phương pháp đo
+| Quy ước | Nội dung |
+|---|---|
+| Mốc 0 | Dòng `U-Boot SPL` trên serial (`grabserial -m "^U-Boot SPL"`). ROM code trước SPL không được tính |
+| **T1** | Hình đầu tiên lên HDMI: `Console: switching to colour frame buffer device` (fbcon, chưa phải UI) |
+| **T2** (chỉ số mục tiêu) | UI của app vẽ xong frame đầu tiên |
+| Khối thời gian | 1. Bootloader (SPL → `Starting kernel`), 2. Giải nén (→ `Booting Linux`), 3. Kernel (→ `Run /sbin/init`), 4. Userspace (→ first-frame). Tổng 4 khối = T2 |
+| Quy đổi | Dòng kernel `[ x ]`: `t_SPL = x + K`, với K = thời điểm host của dòng `Booting Linux` trong chính lần boot đó |
+| Cách lấy T2 | Baseline: dòng `[PHASE] first-frame` trong journal. Từ Tối ưu 1: app chạy trước journald nên timestamp journal không tin được; T2 = dòng gỡ fbcon (`switching to colour dummy device 80x30`) − 0,15 s (khoảng cách đo được ở baseline) |
+| Từ Tối ưu 4 | `loglevel=4`: các mốc kernel không còn trên serial, lấy từ `dmesg` trên board rồi cộng K (`Booting Linux` vẫn ra serial) |
+| Từ Tối ưu 3b | Falcon: không còn dòng `Starting kernel`, khối 1 và 2 chỉ đo gộp |
+| Độ tin cậy | Ngưỡng nhiễu T2 ≈ 0,25 s. Cấp nguồn lạnh, cùng màn hình 1280x1024, cùng mức log (trừ Tối ưu 4). Số lần đo ghi ở đầu mỗi mục |
+| Dữ liệu | `measurements/<bước>-runNN.<loại>.log`; `diag-*` là log chẩn đoán |
 
 ## Baseline: cấu hình mặc định
-Chưa tối ưu, **trung bình 3 lần đo**. Log: `baseline-run01..03.grabserial.log`, `baseline-run01..03.board.log`. Mốc 0 = dòng `U-Boot SPL` trên serial (chưa tính ROM code).
+Chưa tối ưu, **trung bình 3 lần đo**. Log: `baseline-run01..03.grabserial.log`, `baseline-run01..03.board.log`.
 
 ### Tổng quan: bật nguồn đến UI mất bao lâu?
 **Khoảng 26,5 giây** từ SPL đến khi UI chính hiện xong (T2).
@@ -50,7 +75,7 @@ gantt
     title Boot Chain Baseline (0.00s ➔ 26.52s)
     dateFormat x
     axisFormat %S s
-    tickInterval 2second
+    tickInterval 1second
 
     section 1. Bootloader (4.16s)
     SPL nạp U-Boot [0.00s → 0.78s] (0.78s)            :done, a1, 0, 778
@@ -89,25 +114,27 @@ Dòng kernel/journal: `t_SPL` = timestamp kernel `[ x ]` + 8,60.
 
 ### Chi tiết từng giai đoạn
 
-#### Trước kernel: 8,60 s (đo trực tiếp bằng `grabserial`)
+#### 1. Bootloader: 4,16 s
 | Bước | Thời gian |
 |---|---|
 | SPL nạp U-Boot | 0,78 s |
 | U-Boot khởi tạo | 0,67 s |
 | Đếm ngược autoboot (chờ thuần túy) | 2,08 s |
 | Đọc `extlinux.conf`, `zImage`, DTB | 0,64 s |
-| `Starting kernel` đến dòng kernel đầu tiên (không in gì) | 4,44 s |
 
-#### Kernel: 5,33 s
+#### 2. Giải nén: 4,44 s
+Từ `Starting kernel` đến dòng kernel đầu tiên, không in gì. Về sau xác định là giải nén zImage XZ (xem Tối ưu 2a, 3a).
+
+#### 3. Kernel: 4,99 s
 | Mốc (thời gian kernel) | |
 |---|---|
-| `fbcon` lên HDMI | 4,6 s |
-| Mount root xong | 5,2 s |
-| Giao cho init | 5,3 s |
+| `fbcon` lên HDMI | 4,59 s |
+| Mount root xong | 4,96 s |
+| Giao cho init (`Run /sbin/init`) | 4,99 s |
 
-Có một khoảng trống 1,6 đến 1,8 s không có log, chưa rõ nguyên nhân (xem 5.7).
+Có một khoảng trống 1,6 đến 1,8 s không có log, vị trí đổi giữa các lần. Nó biến mất ở Tối ưu 2c (xem mục đó).
 
-#### Userspace: 12,59 s (từ lúc kernel giao cho init đến first-frame)
+#### 4. Userspace: 12,93 s (từ `Run /sbin/init` đến first-frame)
 Mốc chính của systemd (tính từ lúc systemd bắt đầu, trung bình 3 lần):
 
 | Mốc | Thời điểm |
@@ -233,7 +260,7 @@ gantt
     title Boot Chain Optimization 1 (0.00s ➔ 17.08s)
     dateFormat x
     axisFormat %S s
-    tickInterval 2second
+    tickInterval 1second
 
     section 1. Bootloader (4.15s)
     SPL nạp U-Boot [0.00s → 0.78s] (0.78s)            :done, b1, 0, 775
@@ -383,7 +410,7 @@ gantt
     title Boot Chain Optimization 2 (0.00s ➔ 12.07s)
     dateFormat x
     axisFormat %S s
-    tickInterval 2second
+    tickInterval 1second
 
     section 1. Bootloader (2.04s)
     SPL nạp U-Boot [0.00s → 0.77s] (0.77s)            :done, c1, 0, 773
@@ -706,3 +733,38 @@ gantt
 ```
 
 Phân bổ T2 hiện tại: Userspace 49%, SPL + Giải nén 29%, Kernel 22%.
+
+## Tổng kết
+
+### Tiến trình
+| Bước | Thay đổi | Số lần đo | T1 | T2 |
+|---|---|---|---|---|
+| Baseline | Cấu hình mặc định | 3 | 13,19 s | 26,52 s |
+| Tối ưu 1 | App không chờ `basic.target` (`DefaultDependencies=no`) | 1 | 13,19 s | ≈ 17,08 s |
+| Tối ưu 2a | Tắt driver SoC/PMIC không có trên BBB | 1 | 13,11 s | ≈ 16,96 s |
+| Tối ưu 2b | `bootdelay=0` | 1 | 11,09 s | ≈ 14,95 s |
+| Tối ưu 2c | Thu nhỏ kernel (filesystem, RAID), tắt cape EEPROM và eMMC trong DT | 1 | 8,27 s | ≈ 12,07 s |
+| Tối ưu 3a | Nén kernel LZ4 thay XZ | 1 | 5,43 s | ≈ 9,20 s |
+| Tối ưu 3b | Falcon mode | 1 | 4,40 s | ≈ 8,20 s |
+| Tối ưu 4 | `loglevel=4` | 3 | 3,14 s | **≈ 6,5 s** |
+
+T2 giảm ≈ 20 s (−75%). Phân bổ hiện tại: Userspace 49%, SPL + Giải nén 29%, Kernel 22%.
+
+### Cố ý chưa làm
+| Hạng mục | Lý do |
+|---|---|
+| Userspace: khoảng 1,6 s systemd chạy generator và nạp unit trước unit đầu tiên | Dừng có chủ ý; phần lớn thuộc về systemd, chỉ giảm mạnh nếu thay init |
+| Ethernet, USB chuyển sang module | Sản phẩm cần; cần cài module vào image, để sau |
+| Tìm thay đổi nào ở Tối ưu 2c gỡ được khoảng trống 1,6 s | Chỉ mang tính tìm hiểu, không giảm thêm thời gian |
+| `systemd.show_status=false` / `quiet` | Mất log trạng thái systemd đang dùng để quan sát |
+| Falcon đọc sector raw, SPL dùng DMA | Phải đổi bố cục thẻ và vá SPL |
+| GPU (SGX530) | Driver trong meta-ti nhắm kernel 6.1; UI hiện vẽ bằng CPU đủ nhanh cho frame đầu |
+
+### Hướng tiếp theo
+- Kiểm chứng giả định "U-Boot chỉ thêm `bootargs` vào DTB": so `/sys/firmware/fdt` với DTB gốc.
+- Đo lặp các bước mới có 1 lần đo, tối thiểu là cấu hình cuối.
+- Có thể giảm thêm, mỗi cái một bước: rootfs read-only (bỏ ext4 recovery, vừa tốn thời gian vừa gây nhiễu
+  số đo), `lpj=` (bỏ hiệu chỉnh delay loop), `systemd.show_status=false`.
+- Sản phẩm: chiến lược cập nhật A/B và rollback khi bỏ U-Boot proper, kiểm tra chữ ký kernel, root theo
+  thiết bị lưu trữ cuối cùng (eMMC hay SD).
+- Hiệu năng UI (FPS, CPU khi chạy) và so sánh với bản Qt trên nhánh riêng.
