@@ -133,14 +133,3 @@ grabserial -d /dev/ttyUSB0 -b 115200 -t -m "^U-Boot SPL" -q "beaglebone login:" 
 
 Log files are named `<step>-runNN.<kind>.log`; `diag-*` files are diagnostic captures and
 are not used for T1/T2.
-
-## Known limitations
-
-- Falcon mode bypasses U-Boot proper, which is where A/B slot selection, boot counting and
-  rollback are usually implemented. Kernel and device tree are not signature-checked.
-- The root device is selected by path, not by PARTUUID. Revisit if the eMMC is enabled or
-  becomes the boot medium.
-- The boot ROM occasionally fails its first attempt to read the microSD card and tries UART
-  boot (`CCCC...` on the console), adding several seconds before SPL. This is outside T1/T2.
-- systemd status messages are still printed on the serial console.
-- Userspace is now the largest stage and has not been optimized beyond the UI service unit.
